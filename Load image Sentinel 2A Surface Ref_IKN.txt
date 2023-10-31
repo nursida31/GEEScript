@@ -1,0 +1,65 @@
+// Load image Sentinel 2A Surface Reflectance
+var S2A = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                   .filterDate('2022-01-01', '2022-12-31')
+                .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30)) //cloud cover kurang dr 30%
+                .map(maskS2clouds)
+                .median() // diambil nilai tengah atau mediannya
+                .clip(geometry); //potong IKN
+
+// melakukan cloud masking             
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+  return image.updateMask(mask).divide(1);
+}  
+          
+// visualisasi RGB true color
+var RGBTrue = S2A.select(['B4', 'B3', 'B2']);
+var RGBparam = { min: 0, max: 3000,};
+Map.addLayer(RGBTrue, RGBparam, 'Sentinel RGB 432');
+
+/calculating NDVI
+var nir = S2A.select('B8');
+var red = S2A.select('B4');
+var ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI IKN');
+
+var NDVIparam = {min: -1, max: 1, palette:['blue', 'white', 'green']};
+Map.addLayer(ndvi, NDVIparam, 'NDVI IKN');
+
+// calculating NDBI
+var swir =S2A.select('B11');                                                            
+var ndbi = swir.subtract(nir).divide(swir.add(nir)).rename('NDBI IKN');
+
+var NDBIparam = {min: -1, max: 1, palette:['green', 'yellow', 'red']};        
+Map.addLayer(ndbi, NDBIparam, 'NDBI IKN');
+
+// calculating NDWI
+var green =S2A.select('B3');                                                            
+var ndwi = green.subtract(nir).divide(green.add(nir)).rename('NDWI IKN');
+
+var NDWIparam = {min: -1, max: 1, palette:['white', 'blue']};        
+Map.addLayer(ndwi, NDWIparam, 'NDWI IKN');
+
+//calculating LSWI
+var lswi = nir.subtract(swir).divide(nir.add(swir)).rename('LSWI IKN');
+
+var LSWIparam = {min: -1, max: 1, palette:['white', 'blue']};        
+Map.addLayer(lswi, LSWIparam, 'LSWI IKN');
+
+//Zoom ke ROI
+Map.centerObject(geometry);
+
+print("A sentinel scene:", S2A); //informasi scene  citra
+
+//Eksport Data
+Export.image.toDrive({
+  image: ndvi,
+  description: 'NDVI_IKN',
+  folder: 'GEE IKN',
+  scale: 10,
+  region: geometry,
+  fileFormat: 'GeoTIFF'
+  });
